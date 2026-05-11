@@ -18,8 +18,10 @@ Claude Code does not expand `${CLAUDE_PLUGIN_ROOT}` inside `settings.json`'s `st
    If none exist, create `~/.claude/settings.json` containing `{}` (after confirming with the user).
 
 2. **Read the file** and inspect any existing top-level `statusLine` key.
-   - If its `command` ends in `/bin/dhsm-statusline`: tell the user it's already installed and stop.
-   - If it points elsewhere: show the current value, ask whether to overwrite or abort.
+   - If its `command` ends in `/bin/dhsm-statusline`, check whether that path actually exists (e.g. `ls <path>`):
+     - If it exists and is executable: tell the user it's already installed and stop.
+     - If it does NOT exist (stale path from a previous install location): silently upgrade by overwriting with the new path in step 3 — do not stop.
+   - If it points elsewhere (some other status-line tool): show the current value, ask whether to overwrite or abort.
 
 3. **Edit the file** to add (or replace) this top-level key, preserving every other key and the existing formatting:
 
