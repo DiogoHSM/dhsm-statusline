@@ -1,0 +1,9 @@
+{
+  "name": "dhsm-statusline",
+  "description": "Three-line Claude Code status bar: model + estimated cost + macOS memory + context-window progress, optional 5h/7d rate-limit usage, and git branch/diff line.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Diogo HSM"
+  },
+  "keywords": ["statusline", "status-line", "cost", "context-window", "rate-limit"]
+}

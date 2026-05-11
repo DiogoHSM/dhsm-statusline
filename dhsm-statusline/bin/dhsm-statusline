@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# dhsm-statusline — Claude Code status line
+# Reads a JSON payload on stdin and prints 1–3 colorized lines.
+#
+# Customize via env vars (set in your shell profile):
+#   STATUSLINE_INPUT_PRICE       USD per 1M input tokens        (default 3)
+#   STATUSLINE_OUTPUT_PRICE      USD per 1M output tokens       (default 15)
+#   STATUSLINE_CACHE_READ_PRICE  USD per 1M cache-read tokens   (default 0.30)
+#   STATUSLINE_CACHE_WRITE_PRICE USD per 1M cache-write tokens  (default 3.75)
+#   STATUSLINE_CTX_YELLOW_TOKENS Context tokens where bar turns yellow (default 120000)
+#   STATUSLINE_SHOW_MEMORY       1/0 — show macOS memory usage (default 1)
+#   STATUSLINE_SHOW_GIT          1/0 — show git line           (default 1)
+
+input=$(cat)
+
+: "${STATUSLINE_INPUT_PRICE:=3}"
+: "${STATUSLINE_OUTPUT_PRICE:=15}"
+: "${STATUSLINE_CACHE_READ_PRICE:=0.30}"
+: "${STATUSLINE_CACHE_WRITE_PRICE:=3.75}"
+: "${STATUSLINE_CTX_YELLOW_TOKENS:=120000}"
+: "${STATUSLINE_SHOW_MEMORY:=1}"
+: "${STATUSLINE_SHOW_GIT:=1}"
+
+RESET='\033[0m'
+DIM='\033[90m'
+YELLOW='\033[33m'
+GREEN='\033[32m'
+CYAN='\033[36m'
+BLUE='\033[34m'
+RED='\033[31m'
+
+workspace_dir=$(echo "$input" | jq -r '.workspace.current_dir // empty')
+model_name=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
+
+total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
+total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
+cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
+cache_write=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
+
+cost=$(echo "$total_input $total_output $cache_read $cache_write $STATUSLINE_INPUT_PRICE $STATUSLINE_OUTPUT_PRICE $STATUSLINE_CACHE_READ_PRICE $STATUSLINE_CACHE_WRITE_PRICE" | awk '{
+  total = ($1 * $5 + $2 * $6 + $3 * $7 + $4 * $8) / 1000000
+  printf "$%.2f", total
+}')
+
+mem_info=""
+if [ "$STATUSLINE_SHOW_MEMORY" = "1" ] && command -v vm_stat &>/dev/null; then
+  page_size=$(vm_stat | awk '/page size/ {print $8}')
+  pages_active=$(vm_stat | awk '/Pages active/ {gsub(/\./, "", $3); print $3}')
+  pages_wired=$(vm_stat | awk '/Pages wired down/ {gsub(/\./, "", $4); print $4}')
+  pages_compressed=$(vm_stat | awk '/Pages occupied by compressor/ {gsub(/\./, "", $5); print $5}')
+  total_mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
+
+  used_mem=$(echo "$page_size $pages_active $pages_wired $pages_compressed" | awk '{
+    used = ($2 + $3 + $4) * $1
+    printf "%.1f", used / 1073741824
+  }')
+  total_mem=$(echo "$total_mem_bytes" | awk '{printf "%.1f", $1 / 1073741824}')
+  mem_pct=$(echo "$used_mem $total_mem" | awk '{printf "%d", ($1/$2)*100}')
+  if [ "$mem_pct" -lt 50 ]; then
+    mem_color="$GREEN"
+  elif [ "$mem_pct" -lt 80 ]; then
+    mem_color="$YELLOW"
+  else
+    mem_color="$RED"
+  fi
+  mem_info="${mem_color}${used_mem}G/${total_mem}G${RESET}"
+fi
+
+ctx_total=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // 0')
+ctx_used=$(echo "$ctx_total $ctx_pct" | awk '{printf "%d", $1 * $2 / 100}')
+ctx_used_k=$(echo "$ctx_used" | awk '{printf "%dk", int($1/1000)}')
+ctx_total_k=$(echo "$ctx_total" | awk '{printf "%dk", int($1/1000)}')
+ctx_pct_int=$(echo "$ctx_pct" | awk '{printf "%d", $1}')
+
+bar_filled=$(awk "BEGIN {n=int(($ctx_pct_int+9)/10); if(n>10)n=10; print n}")
+bar=""
+for i in $(seq 1 10); do
+  if [ "$i" -le "${bar_filled:-0}" ]; then
+    bar="${bar}█"
+  else
+    bar="${bar}░"
+  fi
+done
+
+ctx_used_int=$(echo "$ctx_used" | awk '{printf "%d", $1}')
+if [ "$ctx_used_int" -lt "$STATUSLINE_CTX_YELLOW_TOKENS" ]; then
+  bar_color="$BLUE"
+elif [ "$ctx_pct_int" -lt 80 ]; then
+  bar_color="$YELLOW"
+else
+  bar_color="$RED"
+fi
+
+five_hour_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+five_hour_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+seven_day_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+seven_day_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+
+format_time_remaining() {
+  local epoch="$1"
+  if [ -z "$epoch" ] || [ "$epoch" = "null" ]; then echo ""; return; fi
+  local now diff hours minutes
+  now=$(date +%s)
+  diff=$((epoch - now))
+  if [ "$diff" -le 0 ]; then echo "now"; return; fi
+  hours=$((diff / 3600))
+  minutes=$(( (diff % 3600) / 60 ))
+  if [ "$hours" -gt 0 ]; then echo "${hours}hr ${minutes}m"; else echo "${minutes}m"; fi
+}
+
+git_branch=""
+git_changes=""
+git_home_branch=""
+
+if [ "$STATUSLINE_SHOW_GIT" = "1" ] && [ -n "$workspace_dir" ] && [ -d "$workspace_dir" ]; then
+  git_branch=$(git -C "$workspace_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [ -n "$git_branch" ]; then
+    insertions=$(git -C "$workspace_dir" diff --shortstat HEAD 2>/dev/null | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+    deletions=$(git -C "$workspace_dir" diff --shortstat HEAD 2>/dev/null | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+    [ -z "$insertions" ] && insertions=0
+    [ -z "$deletions" ] && deletions=0
+    if [ "$insertions" -gt 0 ] || [ "$deletions" -gt 0 ]; then
+      git_changes="(+${insertions},-${deletions})"
+    fi
+    git_home_branch=$(git -C "$workspace_dir" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|.*/||' || echo "main")
+    [ -z "$git_home_branch" ] && git_home_branch="main"
+  fi
+fi
+
+line1_parts=()
+line1_parts+=("$(printf "%bModel:%b %s" "$DIM" "$RESET" "$model_name")")
+line1_parts+=("$(printf "%bCost:%b %s" "$DIM" "$RESET" "$cost")")
+[ -n "$mem_info" ] && line1_parts+=("$(printf "%bMem:%b %b" "$DIM" "$RESET" "$mem_info")")
+line1_parts+=("$(printf "%bContext:%b [%b%s%b] %s/%s (%d%%)" \
+  "$DIM" "$RESET" "$bar_color" "$bar" "$RESET" \
+  "$ctx_used_k" "$ctx_total_k" "$ctx_pct_int")")
+
+line1="${line1_parts[0]}"
+for i in "${!line1_parts[@]}"; do
+  [ "$i" -eq 0 ] && continue
+  line1="$line1 | ${line1_parts[$i]}"
+done
+echo -e "$line1"
+
+line2_parts=()
+if [ -n "$five_hour_pct" ] && [ "$five_hour_pct" != "null" ]; then
+  five_pct_fmt=$(printf "%.1f%%" "$five_hour_pct")
+  five_reset=$(format_time_remaining "$five_hour_reset")
+  five_int=$(echo "$five_hour_pct" | awk '{printf "%d", $1}')
+  if [ "$five_int" -lt 50 ]; then five_color="$GREEN"
+  elif [ "$five_int" -lt 80 ]; then five_color="$YELLOW"
+  else five_color="$RED"; fi
+  part=$(printf "%bSession:%b %b%s%b" "$DIM" "$RESET" "$five_color" "$five_pct_fmt" "$RESET")
+  [ -n "$five_reset" ] && part="$part$(printf " | %bReset:%b %s" "$DIM" "$RESET" "$five_reset")"
+  line2_parts+=("$part")
+fi
+
+if [ -n "$seven_day_pct" ] && [ "$seven_day_pct" != "null" ]; then
+  week_pct_fmt=$(printf "%.1f%%" "$seven_day_pct")
+  week_reset=$(format_time_remaining "$seven_day_reset")
+  week_int=$(echo "$seven_day_pct" | awk '{printf "%d", $1}')
+  if [ "$week_int" -lt 50 ]; then week_color="$GREEN"
+  elif [ "$week_int" -lt 80 ]; then week_color="$YELLOW"
+  else week_color="$RED"; fi
+  part=$(printf "%bWeekly:%b %b%s%b" "$DIM" "$RESET" "$week_color" "$week_pct_fmt" "$RESET")
+  [ -n "$week_reset" ] && part="$part$(printf " | %bWeekly Reset:%b %s" "$DIM" "$RESET" "$week_reset")"
+  line2_parts+=("$part")
+fi
+
+if [ "${#line2_parts[@]}" -gt 0 ]; then
+  line2="${line2_parts[0]}"
+  for i in "${!line2_parts[@]}"; do
+    [ "$i" -eq 0 ] && continue
+    line2="$line2 | ${line2_parts[$i]}"
+  done
+  echo -e "$line2"
+fi
+
+if [ -n "$git_branch" ]; then
+  repo_name=$(basename "$workspace_dir")
+  line3=$(printf "%b⎇%b %s %b(%s)%b" "$CYAN" "$RESET" "$git_branch" "$DIM" "$repo_name" "$RESET")
+  [ -n "$git_changes" ] && line3="$line3 | $git_changes"
+  [ -n "$git_home_branch" ] && line3="$line3 | 🏠 $git_home_branch"
+  echo -e "$line3"
+fi

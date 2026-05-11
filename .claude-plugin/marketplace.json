@@ -1,0 +1,13 @@
+{
+  "name": "dhsm-statusline",
+  "owner": {
+    "name": "Diogo HSM"
+  },
+  "plugins": [
+    {
+      "name": "dhsm-statusline",
+      "source": "./dhsm-statusline",
+      "description": "Three-line Claude Code status bar with cost, memory, context, rate limits and git info."
+    }
+  ]
+}
