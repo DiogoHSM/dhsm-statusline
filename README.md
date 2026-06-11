@@ -3,9 +3,9 @@
 A three-line Claude Code status bar with cost estimate, macOS memory, context-window progress, optional 5h/7d rate-limit usage, and git info.
 
 ```
-Model: Sonnet 4.6 | Cost: $0.42 | Mem: 24.9G/32.0G | Context: [████░░░░░░] 78k/200k (39%)
+Model: Sonnet 4.6 [high] | Cost: $0.42 | Context: [████░░░░░░] 78k/200k (39%)
 Session: 22.4% | Reset: 3hr 12m | Weekly: 41.0% | Weekly Reset: 4d 8hr
-⎇ feature/billing (tilt-api) | (+312,-87) | 🏠 main
+Mem: 24.9G/32.0G | ⎇ feature/billing (tilt-api) | (+312,-87) | 🏠 main
 ```
 
 Line 2 only renders when Claude Code provides rate-limit data. Line 3 only renders inside a git repo.

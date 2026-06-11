@@ -31,6 +31,7 @@ RED='\033[31m'
 
 workspace_dir=$(echo "$input" | jq -r '.workspace.current_dir // empty')
 model_name=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
+effort_level=$(echo "$input" | jq -r '.effort.level // empty')
 
 total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
@@ -129,9 +130,12 @@ if [ "$STATUSLINE_SHOW_GIT" = "1" ] && [ -n "$workspace_dir" ] && [ -d "$workspa
 fi
 
 line1_parts=()
-line1_parts+=("$(printf "%bModel:%b %s" "$DIM" "$RESET" "$model_name")")
+if [ -n "$effort_level" ]; then
+  line1_parts+=("$(printf "%bModel:%b %s %b[%s]%b" "$DIM" "$RESET" "$model_name" "$DIM" "$effort_level" "$RESET")")
+else
+  line1_parts+=("$(printf "%bModel:%b %s" "$DIM" "$RESET" "$model_name")")
+fi
 line1_parts+=("$(printf "%bCost:%b %s" "$DIM" "$RESET" "$cost")")
-[ -n "$mem_info" ] && line1_parts+=("$(printf "%bMem:%b %b" "$DIM" "$RESET" "$mem_info")")
 line1_parts+=("$(printf "%bContext:%b [%b%s%b] %s/%s (%d%%)" \
   "$DIM" "$RESET" "$bar_color" "$bar" "$RESET" \
   "$ctx_used_k" "$ctx_total_k" "$ctx_pct_int")")
@@ -177,10 +181,15 @@ if [ "${#line2_parts[@]}" -gt 0 ]; then
   echo -e "$line2"
 fi
 
-if [ -n "$git_branch" ]; then
-  repo_name=$(basename "$workspace_dir")
-  line3=$(printf "%b⎇%b %s %b(%s)%b" "$CYAN" "$RESET" "$git_branch" "$DIM" "$repo_name" "$RESET")
-  [ -n "$git_changes" ] && line3="$line3 | $git_changes"
-  [ -n "$git_home_branch" ] && line3="$line3 | 🏠 $git_home_branch"
+if [ -n "$git_branch" ] || [ -n "$mem_info" ]; then
+  line3=""
+  [ -n "$mem_info" ] && line3="$(printf "%bMem:%b %b" "$DIM" "$RESET" "$mem_info")"
+  if [ -n "$git_branch" ]; then
+    repo_name=$(basename "$workspace_dir")
+    git_part=$(printf "%b⎇%b %s %b(%s)%b" "$CYAN" "$RESET" "$git_branch" "$DIM" "$repo_name" "$RESET")
+    [ -n "$git_changes" ] && git_part="$git_part | $git_changes"
+    [ -n "$git_home_branch" ] && git_part="$git_part | 🏠 $git_home_branch"
+    [ -n "$line3" ] && line3="$line3 | $git_part" || line3="$git_part"
+  fi
   echo -e "$line3"
 fi
