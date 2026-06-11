@@ -81,6 +81,10 @@ Find the resolved path with `ls ~/.claude/plugins/cache/*/dhsm-statusline*/bin/d
 
 Because the path is baked in, if you uninstall and reinstall the plugin, re-run `/dhsm-statusline:install-statusline` to refresh the absolute path.
 
+## Inspiration
+
+Inspired by [ccstatusline](https://github.com/sirmalloc/ccstatusline) by sirmalloc — a much more feature-rich statusline worth checking out. Both are MIT licensed.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
