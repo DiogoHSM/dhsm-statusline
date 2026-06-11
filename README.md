@@ -31,6 +31,16 @@ The install command asks Claude to edit your `~/.claude/settings.json` and add t
 
 Then **restart Claude Code** so it picks up the new status line.
 
+## Update
+
+```text
+/plugin update dhsm-statusline
+/reload-plugins
+/dhsm-statusline:update-statusline
+```
+
+Then **restart Claude Code**. The update command re-detects the binary path and refreshes `settings.json` — necessary because Claude Code bakes in an absolute path that may change between plugin versions.
+
 ## Uninstall
 
 ```text
