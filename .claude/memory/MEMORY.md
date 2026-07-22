@@ -2,4 +2,4 @@
 
 Índice de memórias do projeto.
 
-<!-- - [Título](arquivo.md) — descrição em uma linha -->
+- [Bump de versão obrigatório](version-bump-required.md) — mudança em bin/ sem bump de version não propaga via /plugin update
