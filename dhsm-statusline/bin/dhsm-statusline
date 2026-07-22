@@ -3,20 +3,20 @@
 # Reads a JSON payload on stdin and prints 1–3 colorized lines.
 #
 # Customize via env vars (set in your shell profile):
-#   STATUSLINE_INPUT_PRICE       USD per 1M input tokens        (default 3)
-#   STATUSLINE_OUTPUT_PRICE      USD per 1M output tokens       (default 15)
-#   STATUSLINE_CACHE_READ_PRICE  USD per 1M cache-read tokens   (default 0.30)
-#   STATUSLINE_CACHE_WRITE_PRICE USD per 1M cache-write tokens  (default 3.75)
+#   STATUSLINE_INPUT_PRICE       USD per 1M input tokens        (default: auto-detected from model tier)
+#   STATUSLINE_OUTPUT_PRICE      USD per 1M output tokens       (default: auto-detected from model tier)
+#   STATUSLINE_CACHE_READ_PRICE  USD per 1M cache-read tokens   (default: auto-detected from model tier)
+#   STATUSLINE_CACHE_WRITE_PRICE USD per 1M cache-write tokens  (default: auto-detected from model tier)
 #   STATUSLINE_CTX_YELLOW_TOKENS Context tokens where bar turns yellow (default 120000)
 #   STATUSLINE_SHOW_MEMORY       1/0 — show macOS memory usage (default 1)
 #   STATUSLINE_SHOW_GIT          1/0 — show git line           (default 1)
+#
+# Pricing is auto-detected per request from the model's display name
+# (Opus/Sonnet/Haiku/Fable/Mythos tiers). Set any STATUSLINE_*_PRICE var
+# above to override auto-detection.
 
 input=$(cat)
 
-: "${STATUSLINE_INPUT_PRICE:=3}"
-: "${STATUSLINE_OUTPUT_PRICE:=15}"
-: "${STATUSLINE_CACHE_READ_PRICE:=0.30}"
-: "${STATUSLINE_CACHE_WRITE_PRICE:=3.75}"
 : "${STATUSLINE_CTX_YELLOW_TOKENS:=120000}"
 : "${STATUSLINE_SHOW_MEMORY:=1}"
 : "${STATUSLINE_SHOW_GIT:=1}"
@@ -32,6 +32,22 @@ RED='\033[31m'
 workspace_dir=$(echo "$input" | jq -r '.workspace.current_dir // empty')
 model_name=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
 effort_level=$(echo "$input" | jq -r '.effort.level // empty')
+
+# Auto-detect per-1M-token pricing from the model tier. Cache-read is ~0.1x
+# and cache-write (5m) is ~1.25x the input price, matching Anthropic's
+# published cache economics. Sonnet is also the fallback for unrecognized names.
+model_lc=$(echo "$model_name" | tr '[:upper:]' '[:lower:]')
+case "$model_lc" in
+  *fable*|*mythos*) tier_input=10; tier_output=50; tier_cache_read=1.00; tier_cache_write=12.50 ;;
+  *opus*)           tier_input=5;  tier_output=25; tier_cache_read=0.50; tier_cache_write=6.25 ;;
+  *haiku*)          tier_input=1;  tier_output=5;  tier_cache_read=0.10; tier_cache_write=1.25 ;;
+  *)                tier_input=3;  tier_output=15; tier_cache_read=0.30; tier_cache_write=3.75 ;;
+esac
+
+: "${STATUSLINE_INPUT_PRICE:=$tier_input}"
+: "${STATUSLINE_OUTPUT_PRICE:=$tier_output}"
+: "${STATUSLINE_CACHE_READ_PRICE:=$tier_cache_read}"
+: "${STATUSLINE_CACHE_WRITE_PRICE:=$tier_cache_write}"
 
 total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')

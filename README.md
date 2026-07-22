@@ -56,15 +56,15 @@ All knobs are environment variables. Set them in your shell profile (`~/.zshrc`,
 
 | Variable | Default | What it does |
 |---|---|---|
-| `STATUSLINE_INPUT_PRICE` | `3` | USD per 1M input tokens |
-| `STATUSLINE_OUTPUT_PRICE` | `15` | USD per 1M output tokens |
-| `STATUSLINE_CACHE_READ_PRICE` | `0.30` | USD per 1M cache-read tokens |
-| `STATUSLINE_CACHE_WRITE_PRICE` | `3.75` | USD per 1M cache-write tokens |
+| `STATUSLINE_INPUT_PRICE` | auto-detected | USD per 1M input tokens |
+| `STATUSLINE_OUTPUT_PRICE` | auto-detected | USD per 1M output tokens |
+| `STATUSLINE_CACHE_READ_PRICE` | auto-detected | USD per 1M cache-read tokens |
+| `STATUSLINE_CACHE_WRITE_PRICE` | auto-detected | USD per 1M cache-write tokens |
 | `STATUSLINE_CTX_YELLOW_TOKENS` | `120000` | Context-bar turns yellow above this |
 | `STATUSLINE_SHOW_MEMORY` | `1` | `0` to hide the macOS memory segment |
 | `STATUSLINE_SHOW_GIT` | `1` | `0` to hide the git line |
 
-Defaults reflect Claude Sonnet 4.5/4.6 pricing. Change them if you're on Opus or Haiku.
+Pricing auto-detects per request from the model's display name (Opus/Sonnet/Haiku/Fable/Mythos tiers — matching Anthropic's published per-1M-token rates, with cache-read at ~0.1x and cache-write at ~1.25x the input price). Unrecognized model names fall back to Sonnet-tier pricing. Set any `STATUSLINE_*_PRICE` var to override auto-detection.
 
 ## Manual install (no slash command)
 
