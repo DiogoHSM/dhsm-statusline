@@ -8,12 +8,12 @@
 #   STATUSLINE_CACHE_READ_PRICE  USD per 1M cache-read tokens   (default: auto-detected from model tier)
 #   STATUSLINE_CACHE_WRITE_PRICE USD per 1M cache-write tokens  (default: auto-detected from model tier)
 #   STATUSLINE_CTX_YELLOW_TOKENS Context tokens where bar turns yellow (default 120000)
-#   STATUSLINE_SHOW_MEMORY       1/0 — show macOS memory usage (default 1)
+#   STATUSLINE_SHOW_MEMORY       1/0 — show memory usage, macOS/Linux (default 1)
 #   STATUSLINE_SHOW_GIT          1/0 — show git line           (default 1)
 #
-# Pricing is auto-detected per request from the model's display name
-# (Opus/Sonnet/Haiku/Fable/Mythos tiers). Set any STATUSLINE_*_PRICE var
-# above to override auto-detection.
+# Cost shows Claude Code's own session total (cost.total_cost_usd) when available.
+# Otherwise it is estimated ("~$") from per-model pricing detected from the model id.
+# Setting any STATUSLINE_*_PRICE var forces the estimate with your prices.
 
 input=$(cat)
 
@@ -33,34 +33,54 @@ workspace_dir=$(echo "$input" | jq -r '.workspace.current_dir // empty')
 model_name=$(echo "$input" | jq -r '.model.display_name // "Unknown"')
 effort_level=$(echo "$input" | jq -r '.effort.level // empty')
 
-# Auto-detect per-1M-token pricing from the model tier. Cache-read is ~0.1x
-# and cache-write (5m) is ~1.25x the input price, matching Anthropic's
-# published cache economics. Sonnet is also the fallback for unrecognized names.
-model_lc=$(echo "$model_name" | tr '[:upper:]' '[:lower:]')
+# Auto-detect per-1M-token pricing from the model id (falls back to display name).
+# Cache-write (5m) is 1.25x input; cache-read varies by model. Rates as of 2026-10.
+# Unrecognized models fall back to the current Opus tier.
+model_id=$(echo "$input" | jq -r '.model.id // empty')
+model_lc=$(echo "${model_id:-$model_name}" | tr '[:upper:]' '[:lower:]' | tr ' .' '--')
 case "$model_lc" in
-  *fable*|*mythos*) tier_input=10; tier_output=50; tier_cache_read=1.00; tier_cache_write=12.50 ;;
-  *opus*)           tier_input=5;  tier_output=25; tier_cache_read=0.50; tier_cache_write=6.25 ;;
-  *haiku*)          tier_input=1;  tier_output=5;  tier_cache_read=0.10; tier_cache_write=1.25 ;;
-  *)                tier_input=3;  tier_output=15; tier_cache_read=0.30; tier_cache_write=3.75 ;;
+  *fable-5-1*|*mythos-5-1*)                                price="10 50 0.25" ;;
+  *fable*|*mythos*)                                        price="10 50 1.00" ;;
+  *opus-5-5*)                                              price="4 20 0.20" ;;
+  *opus-5*|*opus-4-8*|*opus-4-7*|*opus-4-6*|*opus-4-5*)    price="5 25 0.50" ;;
+  *opus-4*)                                                price="15 75 1.50" ;;
+  *opus*)                                                  price="4 20 0.20" ;;
+  *sonnet-5*)                                              price="2 10 0.20" ;;
+  *sonnet*)                                                price="3 15 0.30" ;;
+  *haiku-5-5*)                                             price="0.10 0.50 0.01" ;;
+  *haiku-4-5*)                                             price="1 5 0.10" ;;
+  *haiku*)                                                 price="0.80 4 0.08" ;;
+  *)                                                       price="4 20 0.20" ;;
 esac
+read -r tier_input tier_output tier_cache_read <<< "$price"
+tier_cache_write=$(awk "BEGIN {print $tier_input * 1.25}")
+
+# Prefer the session cost Claude Code computes itself, unless a price override is set.
+price_override="${STATUSLINE_INPUT_PRICE:-}${STATUSLINE_OUTPUT_PRICE:-}${STATUSLINE_CACHE_READ_PRICE:-}${STATUSLINE_CACHE_WRITE_PRICE:-}"
+native_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 
 : "${STATUSLINE_INPUT_PRICE:=$tier_input}"
 : "${STATUSLINE_OUTPUT_PRICE:=$tier_output}"
 : "${STATUSLINE_CACHE_READ_PRICE:=$tier_cache_read}"
 : "${STATUSLINE_CACHE_WRITE_PRICE:=$tier_cache_write}"
 
-total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
-cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
-cache_write=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
+if [ -n "$native_cost" ] && [ -z "$price_override" ]; then
+  cost=$(printf '$%.2f' "$native_cost")
+else
+  total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
+  total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
+  cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
+  cache_write=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
 
-cost=$(echo "$total_input $total_output $cache_read $cache_write $STATUSLINE_INPUT_PRICE $STATUSLINE_OUTPUT_PRICE $STATUSLINE_CACHE_READ_PRICE $STATUSLINE_CACHE_WRITE_PRICE" | awk '{
-  total = ($1 * $5 + $2 * $6 + $3 * $7 + $4 * $8) / 1000000
-  printf "$%.2f", total
-}')
+  cost=$(echo "$total_input $total_output $cache_read $cache_write $STATUSLINE_INPUT_PRICE $STATUSLINE_OUTPUT_PRICE $STATUSLINE_CACHE_READ_PRICE $STATUSLINE_CACHE_WRITE_PRICE" | awk '{
+    total = ($1 * $5 + $2 * $6 + $3 * $7 + $4 * $8) / 1000000
+    printf "~$%.2f", total
+  }')
+fi
 
 mem_info=""
 if [ "$STATUSLINE_SHOW_MEMORY" = "1" ] && command -v vm_stat &>/dev/null; then
+  # macOS
   page_size=$(vm_stat | awk '/page size/ {print $8}')
   pages_active=$(vm_stat | awk '/Pages active/ {gsub(/\./, "", $3); print $3}')
   pages_wired=$(vm_stat | awk '/Pages wired down/ {gsub(/\./, "", $4); print $4}')
@@ -72,7 +92,13 @@ if [ "$STATUSLINE_SHOW_MEMORY" = "1" ] && command -v vm_stat &>/dev/null; then
     printf "%.1f", used / 1073741824
   }')
   total_mem=$(echo "$total_mem_bytes" | awk '{printf "%.1f", $1 / 1073741824}')
-  mem_pct=$(echo "$used_mem $total_mem" | awk '{printf "%d", ($1/$2)*100}')
+elif [ "$STATUSLINE_SHOW_MEMORY" = "1" ] && [ -r /proc/meminfo ]; then
+  # Linux
+  read -r total_mem used_mem < <(awk '/^MemTotal:/ {t=$2} /^MemAvailable:/ {a=$2}
+    END {printf "%.1f %.1f", t/1048576, (t-a)/1048576}' /proc/meminfo)
+fi
+if [ -n "${total_mem:-}" ]; then
+  mem_pct=$(echo "$used_mem $total_mem" | awk '{printf "%d", ($2 > 0 ? ($1/$2)*100 : 0)}')
   if [ "$mem_pct" -lt 50 ]; then
     mem_color="$GREEN"
   elif [ "$mem_pct" -lt 80 ]; then

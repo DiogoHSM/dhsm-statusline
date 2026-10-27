@@ -1,9 +1,9 @@
 # dhsm-statusline
 
-A three-line Claude Code status bar with cost estimate, macOS memory, context-window progress, optional 5h/7d rate-limit usage, and git info.
+A three-line Claude Code status bar with session cost, memory (macOS/Linux), context-window progress, optional 5h/7d rate-limit usage, and git info.
 
 ```
-Model: Sonnet 4.6 [high] | Cost: $0.42 | Context: [████░░░░░░] 78k/200k (39%)
+Model: Opus 5.5 [high] | Cost: $0.42 | Context: [█░░░░░░░░░] 78k/1000k (8%)
 Session: 22.4% | Reset: 3hr 12m | Weekly: 41.0% | Weekly Reset: 4d 8hr
 Mem: 24.9G/32.0G | ⎇ feature/billing (tilt-api) | (+312,-87) | 🏠 main
 ```
@@ -12,9 +12,9 @@ Line 2 only renders when Claude Code provides rate-limit data. Line 3 only rende
 
 ## Requirements
 
-- macOS (the memory and `vm_stat` bits are macOS-specific)
-- `jq` — install with `brew install jq`
-- `awk` and `git` — ship with macOS
+- macOS or Linux (memory via `vm_stat` on macOS, `/proc/meminfo` on Linux)
+- `jq` — `brew install jq` / `sudo apt-get install jq`
+- `awk` and `git`
 
 ## Install
 
@@ -61,10 +61,10 @@ All knobs are environment variables. Set them in your shell profile (`~/.zshrc`,
 | `STATUSLINE_CACHE_READ_PRICE` | auto-detected | USD per 1M cache-read tokens |
 | `STATUSLINE_CACHE_WRITE_PRICE` | auto-detected | USD per 1M cache-write tokens |
 | `STATUSLINE_CTX_YELLOW_TOKENS` | `120000` | Context-bar turns yellow above this |
-| `STATUSLINE_SHOW_MEMORY` | `1` | `0` to hide the macOS memory segment |
+| `STATUSLINE_SHOW_MEMORY` | `1` | `0` to hide the memory segment |
 | `STATUSLINE_SHOW_GIT` | `1` | `0` to hide the git line |
 
-Pricing auto-detects per request from the model's display name (Opus/Sonnet/Haiku/Fable/Mythos tiers — matching Anthropic's published per-1M-token rates, with cache-read at ~0.1x and cache-write at ~1.25x the input price). Unrecognized model names fall back to Sonnet-tier pricing. Set any `STATUSLINE_*_PRICE` var to override auto-detection.
+Cost shows the session total Claude Code computes itself (`cost.total_cost_usd`). When that field is missing, the cost is estimated and prefixed with `~`, using per-model rates detected from `model.id` (Anthropic list prices as of 2026-10: Fable/Mythos, Opus 5.5 / 5 / 4.x, Sonnet 5.x / 4.x, Haiku 5.5 / 4.5; cache-write at 1.25x input, cache-read per model). Unrecognized models fall back to Opus 5.5 rates. Setting any `STATUSLINE_*_PRICE` var forces the estimate with your prices.
 
 ## Manual install (no slash command)
 

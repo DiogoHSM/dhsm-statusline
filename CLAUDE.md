@@ -17,14 +17,16 @@ README.md
 ## Layout das linhas
 
 ```
-Linha 1: Model: <nome> [effort] | Cost: $X.XX | Mem: X/XG | Context: [bar] X/Xk (XX%)
+Linha 1: Model: <nome> [effort] | Cost: $X.XX (~$ = estimado) | Context: [bar] X/Xk (XX%)
 Linha 2: Session: XX% | Reset: Xhr | Weekly: XX% | Weekly Reset: Xd (só quando rate-limit disponível)
-Linha 3: ⎇ branch (repo) | (+X,-Y) | 🏠 main
+Linha 3: Mem: X/XG | ⎇ branch (repo) | (+X,-Y) | 🏠 main  (memória: macOS/Linux)
 ```
 
 ## JSON payload (campos usados)
 
 - `.model.display_name` — nome do modelo
+- `.model.id` — detecção de preço por modelo (fallback: display_name)
+- `.cost.total_cost_usd` — custo nativo da sessão (preferido ao estimado)
 - `.effort.level` — nível de esforço: `low`, `medium`, `high`, `xhigh`, `max` (opcional)
 - `.context_window.*` — uso de contexto
 - `.rate_limits.five_hour.*` e `.rate_limits.seven_day.*` — rate limits
